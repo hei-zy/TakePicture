@@ -15,6 +15,8 @@ private:
 	/// <returns></returns>
 	cv::Mat colorSegmention(cv::Mat& src);
 
+	cv::Mat imgSegmention(cv::Mat& src);
+
 	/// <summary>
 	/// 由椭圆拟合获得靶点坐标
 	/// </summary>

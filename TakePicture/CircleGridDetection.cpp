@@ -11,8 +11,8 @@ CircleGridDetection::~CircleGridDetection()
 
 std::vector<cv::Point2d> CircleGridDetection::getPoints(cv::Mat& src)
 {
-	auto mask = colorSegmention(src);
-	cv::imshow("colorSegmention", mask);
+	auto mask = imgSegmention(src);
+	cv::imshow("imgSegmention", mask);
 	std::vector<cv::Point2d> centers;
 	findTargetByEllipse(mask, src, centers);
 	return centers;
@@ -38,6 +38,8 @@ cv::Mat CircleGridDetection::colorSegmention(cv::Mat& src)
 
 	//…´≤ ±‰ª√
 	cv::cvtColor(dst_kernel, imgHSV, cv::COLOR_BGR2HSV);
+	cv::Mat imgHLS;
+	cv::cvtColor(dst_kernel, imgHLS, cv::COLOR_BGR2HLS);
 	//∑÷∏Ó
 	cv::Mat maskR, maskL, mask;
 	cv::inRange(imgHSV, PARA::lowRedR, PARA::highRedR, maskR);
@@ -64,6 +66,49 @@ cv::Mat CircleGridDetection::colorSegmention(cv::Mat& src)
 	return imgDial;
 }
 
+
+
+cv::Mat CircleGridDetection::imgSegmention(cv::Mat& src)
+{
+	//≈–∂œÕºœÒ «∑Ò’˝»∑∂¡»°
+	if (src.empty())
+	{
+		std::cout << "image load failed" << std::endl;
+		return cv::Mat();
+	}
+	//∏ﬂÀπƒ£∫˝»•≥˝‘Îµ„
+	cv::Mat imgGauss;
+	cv::medianBlur(src, imgGauss, 3);
+	cv::GaussianBlur(imgGauss, imgGauss, cv::Size(3, 3), 0, 0);
+	//ª“∂»
+	cv::Mat imgGray;
+	cv::cvtColor(imgGauss, imgGray, cv::COLOR_BGR2GRAY);
+	//πÈ“ªªØ
+	cv::normalize(imgGray, imgGray, 0, 255, cv::NORM_MINMAX);
+	//„–÷µ∑÷∏Ó
+	cv::Mat imgBi;
+	cv::threshold(imgGray, imgBi, 100, 255, cv::THRESH_BINARY);
+	
+	//±ﬂ‘µºÏ≤‚
+	cv::Mat imgMargin;
+	int cannyThresh = 255;
+	cv::Canny(imgGray, imgMargin, cannyThresh * 2 / 3, cannyThresh, 3, false);
+	cv::Mat kernel = cv::Mat::ones(5, 5, CV_8UC1);
+	cv::dilate(imgMargin, imgMargin, kernel);
+	cv::erode(imgMargin, imgMargin, kernel);
+	//¬÷¿™≤È’“
+	std::vector<std::vector<cv::Point>> contours;
+	cv::findContours(imgMargin, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+	cv::Mat markers = cv::Mat::zeros(src.size(), CV_32SC1);
+	for (int i = 0; i < contours.size(); ++i) {
+		cv::drawContours(markers, contours, i, cv::Scalar::all(255), -1);
+	}
+	markers.convertTo(markers, CV_8UC1);
+
+
+	return markers;
+}
+
 void CircleGridDetection::findTargetByEllipse(cv::Mat& maskImg, cv::Mat& src, std::vector<cv::Point2d>& centers)
 {
 	if (maskImg.empty() || src.empty())
@@ -80,22 +125,22 @@ void CircleGridDetection::findTargetByEllipse(cv::Mat& maskImg, cv::Mat& src, st
 	//—∞’“±ﬂ‘µ
 	std::vector<std::vector<cv::Point> > contours;
 	cv::findContours(imgGray, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-	//////ªÊ÷∆±ﬂ‘µ
-	//cv::Mat dst;
-	//dst = src.clone();
-	//for (size_t i = 0; i < contours.size(); i++)
-	//{
-	//	//Scalar color(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-	//	cv::Scalar color(255, 255, 255);
-	//	drawContours(dst, contours, i, color, 1, cv::LINE_AA);
-	//}
-	//imshow("drawContours", dst);
+	////ªÊ÷∆±ﬂ‘µ
+	cv::Mat dst;
+	dst = src.clone();
+	for (size_t i = 0; i < contours.size(); i++)
+	{
+		//Scalar color(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+		cv::Scalar color(255, 0, 0);
+		drawContours(dst, contours, i, color, 1, cv::LINE_AA);
+	}
+	imshow("drawContours", dst);
 
 	//Õ÷‘≤ƒ‚∫œ
 	std::vector<cv::RotatedRect> ellipses;
 	for (auto& contour : contours) {
 		if (contours.size() > 7) {
-			auto ellipse = cv::fitEllipse(contour);
+			auto ellipse = cv::fitEllipseAMS(contour);
 			auto major = std::max(ellipse.size.width, ellipse.size.height);
 			auto minor = std::min(ellipse.size.width, ellipse.size.height);
 			if (major / minor < 3.0f) {
@@ -107,9 +152,10 @@ void CircleGridDetection::findTargetByEllipse(cv::Mat& maskImg, cv::Mat& src, st
 
 	//draw
 	cv::Mat dst2 = src.clone();
+	//cv::Mat canvas = cv::Mat::zeros(src.size(), src.type());
 	int i = 0;
 	for (auto& ellipse : ellipses) {
-		//cv::ellipse(dst2, ellipse, cv::Scalar(0, 255, 0));
+		cv::ellipse(dst2, ellipse, cv::Scalar(0, 255, 0));
 		cv::circle(dst2, centers[i], 1, cv::Scalar(255, 0, 0), -1);
 		++i;
 	}
@@ -132,16 +178,16 @@ void CircleGridDetection::findTargetByMomnent(cv::Mat& maskImg, cv::Mat& src, st
 	//—∞’“±ﬂ‘µ
 	std::vector<std::vector<cv::Point> > contours;
 	cv::findContours(imgGray, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-	//////ªÊ÷∆±ﬂ‘µ
-	//cv::Mat dst;
-	//dst = src.clone();
-	//for (size_t i = 0; i < contours.size(); i++)
-	//{
-	//	//Scalar color(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
-	//	cv::Scalar color(255, 255, 255);
-	//	drawContours(dst, contours, i, color, 1, cv::LINE_AA);
-	//}
-	//imshow("drawContours", dst);
+	////ªÊ÷∆±ﬂ‘µ
+	cv::Mat dst;
+	dst = src.clone();
+	for (size_t i = 0; i < contours.size(); i++)
+	{
+		//Scalar color(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+		cv::Scalar color(255, 255, 255);
+		drawContours(dst, contours, i, color, 1, cv::LINE_AA);
+	}
+	imshow("drawContours", dst);
 
 	//ÕºœÒæÿ
 	centers = std::vector<cv::Point2d>(contours.size());
